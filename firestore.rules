@@ -1,0 +1,236 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+
+    function isValidEvent(data) {
+      let isUpdate = request.method == 'update';
+      let hasWatermark = !('watermarkText' in data) || (data.watermarkText is string && data.watermarkText.size() <= 500);
+      let hasMobileCap = !('enableMobileCapture' in data) || data.enableMobileCapture is bool;
+
+      return data.keys().hasAll(['name', 'date', 'location', 'clientName', 'slug', 'dpi', 'logoUrl', 'overlays', 'shareText', 'smsShareText', 'isPublic', 'identifyParticipants', 'ownerId']) &&
+             (isUpdate || data.keys().hasAll(['createdAt'])) &&
+             hasWatermark &&
+             hasMobileCap &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.date is number &&
+             data.location is string && data.location.size() <= 200 &&
+             data.clientName is string && data.clientName.size() <= 100 &&
+             data.slug is string && data.slug.size() > 0 && data.slug.matches('^[a-z0-9\\-]+$') &&
+             data.dpi is number && (data.dpi == 150 || data.dpi == 300 || data.dpi == 600) &&
+             data.logoUrl is string && data.logoUrl.size() <= 900000 &&
+             data.overlays is list && data.overlays.size() <= 10 &&
+             data.shareText is string && data.shareText.size() <= 1000 &&
+             data.smsShareText is string && data.smsShareText.size() <= 1000 &&
+             data.isPublic is bool &&
+             data.identifyParticipants is bool &&
+             data.ownerId is string && (request.auth == null || data.ownerId == request.auth.uid) &&
+             (!('createdAt' in data) || data.createdAt is number);
+    }
+
+    function isValidPhoto(data, eventId) {
+      let isSizeValid = data.keys().size() >= 4 && data.keys().size() <= 10;
+      let hasOriginalUrl = !('originalUrl' in data) || (data.originalUrl is string);
+      let hasParticipantId = !('participantId' in data) || (data.participantId is string && data.participantId.size() >= 0);
+      let hasPrintStatus = !('printStatus' in data) || (data.printStatus is string && (data.printStatus == 'pending' || data.printStatus == 'printed'));
+      let hasModeration = !('moderationStatus' in data) || (data.moderationStatus is string && (data.moderationStatus == 'pending' || data.moderationStatus == 'approved' || data.moderationStatus == 'rejected'));
+      let hasPrintedAt = !('printedAt' in data) || (data.printedAt is number);
+      let hasSource = !('source' in data) || (data.source is string && (data.source == 'desktop' || data.source == 'mobile'));
+      let validUploader = data.uploaderId is string && (
+          (request.auth != null && data.uploaderId == request.auth.uid) || 
+          data.uploaderId == 'anonymous' || data.uploaderId == 'guest'
+      );
+
+      return data.keys().hasAll(['eventId', 'uploaderId', 'dataUrl', 'createdAt']) &&
+             isSizeValid &&
+             data.eventId is string && data.eventId == eventId &&
+             validUploader &&
+             data.dataUrl is string && data.dataUrl.size() > 0 &&
+             hasOriginalUrl && hasParticipantId && hasPrintStatus && hasModeration && hasPrintedAt && hasSource &&
+             data.createdAt is number;
+    }
+
+    function isValidLead(data, eventId) {
+      let isSizeValid = data.keys().size() >= 6 && data.keys().size() <= 7;
+      let hasCommercial = !('commercialConsent' in data) || data.commercialConsent is bool;
+
+      return data.keys().hasAll(['eventId', 'name', 'phone', 'method', 'dataSharingConsent', 'createdAt']) &&
+             isSizeValid &&
+             data.eventId is string && data.eventId == eventId &&
+             data.name is string && data.name.size() <= 150 &&
+             data.phone is string && data.phone.size() > 0 && data.phone.size() <= 50 &&
+             data.method is string && (data.method == 'whatsapp' || data.method == 'sms' || data.method == 'mobile-capture' || data.method == 'desktop-upload') &&
+             data.dataSharingConsent is bool && data.dataSharingConsent == true &&
+             hasCommercial &&
+             data.createdAt is number;
+    }
+
+    function isValidParticipant(data, eventId) {
+      let isSizeValid = data.keys().size() >= 6 && data.keys().size() <= 7;
+      let hasCommercial = !('commercialConsent' in data) || data.commercialConsent is bool;
+
+      return data.keys().hasAll(['eventId', 'userId', 'name', 'phone', 'lgpdAgreed', 'createdAt']) &&
+             isSizeValid &&
+             data.eventId is string && data.eventId == eventId &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 150 &&
+             data.phone is string && data.phone.size() > 0 && data.phone.size() <= 20 &&
+             data.lgpdAgreed is bool && data.lgpdAgreed == true &&
+             hasCommercial &&
+             data.createdAt is number;
+    }
+
+    function isValidMessageLog(data, eventId) {
+      let isSizeValid = data.keys().size() >= 4 && data.keys().size() <= 9;
+      let hasPhotoId = !('photoId' in data) || (data.photoId is string);
+      let hasRecipientName = !('recipientName' in data) || (data.recipientName is string && data.recipientName.size() <= 200);
+      let hasRecipientPhone = !('recipientPhone' in data) || (data.recipientPhone is string && data.recipientPhone.size() <= 50);
+      let hasStatus = !('status' in data) || (data.status is string && data.status.size() <= 100);
+      let hasError = !('error' in data) || (data.error is string || data.error == null);
+
+      return data.keys().hasAll(['eventId', 'method', 'messageText', 'createdAt']) &&
+             isSizeValid &&
+             data.eventId is string && data.eventId == eventId &&
+             data.method is string && (data.method == 'whatsapp' || data.method == 'sms') &&
+             data.messageText is string && data.messageText.size() <= 2000 &&
+             data.createdAt is number &&
+             hasPhotoId && hasRecipientName && hasRecipientPhone && hasStatus && hasError;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'name', 'role', 'createdAt']) &&
+             data.keys().size() == 4 &&
+             data.email is string && data.email.size() > 0 && data.email.size() <= 150 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.role is string && (data.role == 'user' || data.role == 'admin') &&
+             data.createdAt is number;
+    }
+
+    function isValidShortLink(data) {
+      let isSizeValid = data.keys().size() >= 3 && data.keys().size() <= 4;
+      let hasEventId = data.eventId is string && data.eventId.size() > 0;
+      let hasCreatedAt = data.createdAt is number;
+      return hasEventId && hasCreatedAt && isSizeValid &&
+             (!('photoId' in data) || (data.photoId is string && data.photoId.size() > 0)) &&
+             (!('type' in data) || (data.type is string && (data.type == 'photo' || data.type == 'capture' || data.type == 'gallery')));
+    }
+
+    match /admins/{adminId} {
+      allow read: if isSignedIn() && request.auth.uid == adminId;
+      allow write: if false; // Only created via console or backend
+    }
+
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin() && isValidId(userId) && isValidUser(incoming());
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    match /settings/{userId} {
+      allow get: if true;
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /events/{eventId} {
+      allow get: if true;
+      
+      allow list: if (request.query.limit <= 5) || (isSignedIn() && (
+        resource.data.ownerId == request.auth.uid ||
+        isAdmin()
+      ));
+      
+      allow create: if isSignedIn() && isValidId(eventId) &&
+                       isValidEvent(incoming());
+                       
+      allow update: if isSignedIn() && isValidId(eventId) &&
+                       existing().ownerId == request.auth.uid &&
+                       incoming().ownerId == existing().ownerId &&
+                       isValidEvent(incoming());
+                       
+      allow delete: if isSignedIn() && isValidId(eventId) && (existing().ownerId == request.auth.uid || isAdmin());
+
+    match /leads/{leadId} {
+      // Anyone can create a lead
+      allow create: if isValidId(leadId) && isValidLead(incoming(), eventId);
+      // Only event owner admin can read
+      allow read: if isSignedIn() && (
+        get(/databases/$(database)/documents/events/$(eventId)).data.get('ownerId', '') == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        get(/databases/$(database)/documents/events/$(eventId)).data.get('ownerId', '') == request.auth.uid ||
+        isAdmin()
+      );
+      // No updates or deletes for leads
+      allow update, delete: if false;
+    }
+
+    match /photos/{photoId} {
+        allow get: if isValidId(photoId) && isValidId(eventId);
+        allow list: if isValidId(eventId) && (
+          get(/databases/$(database)/documents/events/$(eventId)).data.get('isPublic', false) == true ||
+          (isSignedIn() && get(/databases/$(database)/documents/events/$(eventId)).data.get('ownerId', '') == request.auth.uid) ||
+          isAdmin()
+        );
+        
+        allow create: if isValidId(photoId) && isValidId(eventId) &&
+                         isValidPhoto(incoming(), eventId) &&
+                         (
+                           (isSignedIn() && get(/databases/$(database)/documents/events/$(eventId)).data.get('ownerId', '') == request.auth.uid) ||
+                           get(/databases/$(database)/documents/events/$(eventId)).data.get('enableMobileCapture', false) == true
+                         );
+
+        allow update: if isSignedIn() && isValidId(photoId) && isValidId(eventId) &&
+                         get(/databases/$(database)/documents/events/$(eventId)).data.get('ownerId', '') == request.auth.uid &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['printStatus', 'printedAt', 'moderationStatus']) &&
+                         isValidPhoto(incoming(), eventId);
+                         
+        allow delete: if isSignedIn() && isValidId(photoId) && isValidId(eventId) &&
+                         get(/databases/$(database)/documents/events/$(eventId)).data.get('ownerId', '') == request.auth.uid;
+      }
+
+      match /messages/{messageId} {
+        allow create: if isValidId(messageId) && isValidMessageLog(incoming(), eventId);
+        allow read, list: if isSignedIn() && (
+          get(/databases/$(database)/documents/events/$(eventId)).data.get('ownerId', '') == request.auth.uid ||
+          isAdmin()
+        );
+        allow update, delete: if false;
+      }
+
+      match /participants/{participantId} {
+        allow get: if isSignedIn() && isValidId(participantId) && isValidId(eventId) &&
+                      (existing().userId == request.auth.uid || get(/databases/$(database)/documents/events/$(eventId)).data.get('ownerId', '') == request.auth.uid);
+        allow list: if isSignedIn() && isValidId(eventId) &&
+                       (resource.data.userId == request.auth.uid || get(/databases/$(database)/documents/events/$(eventId)).data.get('ownerId', '') == request.auth.uid);
+        
+        allow create: if isValidId(participantId) && isValidId(eventId) &&
+                         isValidParticipant(incoming(), eventId) &&
+                         exists(/databases/$(database)/documents/events/$(eventId));
+                         
+        allow delete: if isSignedIn() && isValidId(participantId) && isValidId(eventId) &&
+                         get(/databases/$(database)/documents/events/$(eventId)).data.get('ownerId', '') == request.auth.uid;
+      }
+    }
+
+    match /shortLinks/{shortCode} {
+      allow read: if true;
+      allow create: if true && isValidShortLink(incoming());
+      allow update, delete: if false;
+    }
+  }
+}
