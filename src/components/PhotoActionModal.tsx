@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/src/components/ui/dialog';
 import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
-import { Download, MessageCircle, MessageSquare, Printer, Trash2, Send, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, MessageCircle, MessageSquare, Printer, Trash2, Send, ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { db } from '@/src/lib/firebase';
 import { doc, deleteDoc, getDoc, addDoc, collection } from 'firebase/firestore';
@@ -45,6 +45,28 @@ export default function PhotoActionModal({
 }: PhotoActionModalProps) {
   const [showLeadCapture, setShowLeadCapture] = useState<'whatsapp' | 'sms' | null>(null);
   const [isSendingMsg, setIsSendingMsg] = useState(false);
+  const [shortLink, setShortLink] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!photo) {
+      setShortLink(null);
+      return;
+    }
+    let isMounted = true;
+    const fetchLink = async () => {
+      try {
+        const link = await generateShortLink(photo.eventId, photo.id);
+        if (isMounted) setShortLink(link);
+      } catch (err) {
+        console.error("Error generating short link", err);
+      }
+    };
+    fetchLink();
+    return () => {
+      isMounted = false;
+    };
+  }, [photo]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -104,6 +126,8 @@ export default function PhotoActionModal({
        window.open(`https://api.whatsapp.com/send?phone=${cleanedPhone}&text=${text}`, '_blank');
        toast.success("WhatsApp preparado com sucesso!");
        setShowLeadCapture(null);
+       setSuccessMessage("WhatsApp Preparado!");
+       setTimeout(() => setSuccessMessage(null), 3000);
        setIsSendingMsg(false);
        return;
     }
@@ -159,6 +183,8 @@ export default function PhotoActionModal({
         if (data.success) {
           toast.success("SMS enviado com sucesso!");
           setShowLeadCapture(null);
+          setSuccessMessage("SMS Enviado com Sucesso!");
+          setTimeout(() => setSuccessMessage(null), 3000);
         } else {
           toast.error("Falha ao enviar: " + (data.error || "Erro desconhecido"));
         }
@@ -259,7 +285,12 @@ export default function PhotoActionModal({
             </div>
             
             <div className="flex flex-col gap-3 w-full md:w-80 shrink-0 overflow-y-auto max-h-full p-6 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10">
-              {showLeadCapture ? (
+              {successMessage ? (
+                <div className="min-h-[250px] flex flex-col items-center justify-center bg-green-500/10 border border-green-500/20 rounded-3xl p-8 text-center animate-in zoom-in-95 duration-300">
+                   <CheckCircle className="w-16 h-16 text-green-400 mb-4" />
+                   <h3 className="text-xl font-bold text-green-400 tracking-tight">{successMessage}</h3>
+                </div>
+              ) : showLeadCapture ? (
                  <LeadCapture 
                     eventId={photo.eventId} 
                     method={showLeadCapture} 
@@ -297,6 +328,26 @@ export default function PhotoActionModal({
                       <Trash2 className="w-5 h-5" />
                       Apagar Foto
                     </Button>
+                  )}
+
+                  {shortLink && (
+                    <div className="mt-6 pt-6 border-t border-white/10">
+                      <label className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] mb-3 block">Link da Foto</label>
+                      <div 
+                        className="bg-white/5 px-4 py-3 rounded-xl border border-white/10 w-full flex items-center justify-between cursor-pointer hover:bg-white/10 hover:border-white/20 transition-all group" 
+                        onClick={() => {
+                          navigator.clipboard.writeText(shortLink);
+                          toast.success("Link copiado para a área de transferência!");
+                        }}
+                      >
+                        <span className="text-sm font-medium text-white/80 truncate mr-3">
+                           {shortLink.replace(/^https?:\/\//, '')}
+                        </span>
+                        <div className="h-8 w-8 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center group-hover:bg-primary group-hover:border-primary transition-colors shrink-0">
+                           <Download className="w-4 h-4 text-white/60 group-hover:text-white rotate-[270deg]" />
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </>
               )}

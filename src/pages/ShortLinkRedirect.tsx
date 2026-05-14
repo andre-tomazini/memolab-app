@@ -27,7 +27,7 @@ export default function ShortLinkRedirect() {
           } else {
             // Default to photo or check data.photoId
             if (data.photoId) {
-              navigate(`/galeria/${data.eventId}/${data.photoId}`, { replace: true });
+              navigate(`/p/${data.eventId}/${data.photoId}`, { replace: true });
             } else {
               navigate(`/galeria/${data.eventId}`, { replace: true });
             }

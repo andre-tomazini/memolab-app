@@ -84,6 +84,9 @@ export default function EventGallery() {
   const { eventData, loading, quotaError } = useEvent(eventId);
   const isOwner = user?.uid && eventData?.ownerId ? user.uid === eventData.ownerId : false;
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [photoLimit, setPhotoLimit] = useState(200);
+  const [hasMorePhotos, setHasMorePhotos] = useState(true);
+  const [loadingMorePhotos, setLoadingMorePhotos] = useState(false);
   const [leads, setLeads] = useState<LeadItem[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(false);
   const [messages, setMessages] = useState<MessageLogItem[]>([]);
@@ -359,10 +362,11 @@ export default function EventGallery() {
     let unsubscribeParticipant: (() => void) | undefined;
 
     // Listen to photos
+    setLoadingMorePhotos(true);
     const q = query(
       collection(db, "events", eventData.id, "photos"), 
       orderBy("createdAt", "desc"),
-      limit(200) // limit to avoid massive reads
+      limit(photoLimit)
     );
     unsubscribePhotos = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(d => ({
@@ -371,8 +375,11 @@ export default function EventGallery() {
       })) as PhotoItem[];
       
       setPhotos(docs);
+      setHasMorePhotos(snapshot.docs.length === photoLimit);
+      setLoadingMorePhotos(false);
     }, (err: any) => {
       handleFirestoreError(err, OperationType.LIST, `events/${eventData.id}/photos`);
+      setLoadingMorePhotos(false);
     });
 
     // Listen to participant status
@@ -381,7 +388,11 @@ export default function EventGallery() {
     let unsubscribeParticipantMap: (() => void) | undefined;
     if (isOwner) {
       // Owner needs participant map to see names in print queue
-      const mapQ = query(collection(db, "events", eventData.id, "participants"));
+      const mapQ = query(
+        collection(db, "events", eventData.id, "participants"),
+        orderBy("createdAt", "desc"),
+        limit(500)
+      );
       unsubscribeParticipantMap = onSnapshot(mapQ, (snapshot) => {
         const map: Record<string, any> = {};
         snapshot.docs.forEach(doc => {
@@ -411,7 +422,7 @@ export default function EventGallery() {
       if (unsubscribeParticipant) unsubscribeParticipant();
       if (unsubscribeParticipantMap) unsubscribeParticipantMap();
     };
-  }, [eventData?.id, user?.uid]);
+  }, [eventData?.id, user?.uid, photoLimit]);
 
   useEffect(() => {
     if (!eventData || !isOwner) return;
@@ -419,7 +430,8 @@ export default function EventGallery() {
     setLoadingLeads(true);
     const q = query(
       collection(db, "events", eventData.id, "leads"),
-      orderBy("createdAt", "desc")
+      orderBy("createdAt", "desc"),
+      limit(200)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -443,7 +455,8 @@ export default function EventGallery() {
     setLoadingMessages(true);
     const q = query(
       collection(db, "events", eventData.id, "messages"),
-      orderBy("createdAt", "desc")
+      orderBy("createdAt", "desc"),
+      limit(200)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -1056,36 +1069,50 @@ export default function EventGallery() {
                     {isOwner && <p className="text-sm text-muted-foreground/80 mt-1">Faça upload ou aprove fotos na aba de Moderação!</p>}
                   </div>
                 ) : (
-                  <div className="columns-2 md:columns-3 gap-4 space-y-4">
-                    {photos.filter(p => !p.moderationStatus || p.moderationStatus === 'approved').map(photo => (
-                      <div 
-                        key={photo.id} 
-                        className="break-inside-avoid relative group rounded-lg overflow-hidden border border-border bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                        onClick={() => handlePhotoAction(photo)}
-                      >
-                        <img 
-                          src={photo.dataUrl} 
-                          alt="Gallery Item" 
-                          className="w-full h-auto object-cover"
-                          loading="lazy"
-                        />
-                        {photo.source === 'mobile' && (
-                          <div className="absolute top-2 right-2 bg-black/60 rounded-full p-1.5 shadow-sm" title="Enviado remotamente">
-                             <Smartphone className="w-4 h-4 text-white" />
+                  <div className="space-y-6">
+                    <div className="columns-2 md:columns-3 gap-4 space-y-4">
+                      {photos.filter(p => !p.moderationStatus || p.moderationStatus === 'approved').map(photo => (
+                        <div 
+                          key={photo.id} 
+                          className="break-inside-avoid relative group rounded-lg overflow-hidden border border-border bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                          onClick={() => handlePhotoAction(photo)}
+                        >
+                          <img 
+                            src={photo.dataUrl} 
+                            alt="Gallery Item" 
+                            className="w-full h-auto object-cover"
+                            loading="lazy"
+                          />
+                          {photo.source === 'mobile' && (
+                            <div className="absolute top-2 right-2 bg-black/60 rounded-full p-1.5 shadow-sm" title="Enviado remotamente">
+                               <Smartphone className="w-4 h-4 text-white" />
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <Button 
+                              variant="secondary" 
+                              size="sm" 
+                              className="gap-2 pointer-events-none"
+                            >
+                              <Download className="w-4 h-4" />
+                              Ver / Baixar
+                            </Button>
                           </div>
-                        )}
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <Button 
-                            variant="secondary" 
-                            size="sm" 
-                            className="gap-2 pointer-events-none"
-                          >
-                            <Download className="w-4 h-4" />
-                            Ver / Baixar
-                          </Button>
                         </div>
+                      ))}
+                    </div>
+                    {hasMorePhotos && (
+                      <div className="flex justify-center pt-4">
+                        <Button
+                          onClick={() => setPhotoLimit(prev => prev + 200)}
+                          disabled={loadingMorePhotos}
+                          variant="outline"
+                        >
+                          {loadingMorePhotos && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                          Carregar mais fotos
+                        </Button>
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>

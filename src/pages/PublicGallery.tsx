@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate, useLocation } from "react-router-dom";
 import { db } from "@/src/lib/firebase";
-import { collection, getDocs, query, orderBy, limit, getDoc, doc, addDoc } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, limit, getDoc, doc, addDoc, startAfter } from "firebase/firestore";
 import { Loader2, Download, Share2, X, Camera, Image as ImageIcon } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useEvent } from "@/src/lib/useEvent";
@@ -45,6 +45,12 @@ export default function PublicGallery() {
   const [photosLoading, setPhotosLoading] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoItem | null>(null);
   
+  // Infinite scroll / pagination states
+  const [lastVisible, setLastVisible] = useState<any>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const PAGE_SIZE = 50;
+
   // Identification flow state
   const [step, setStep] = useState<'gallery' | 'identify'>('gallery');
   const [participant, setParticipant] = useState<any>(null);
@@ -104,13 +110,20 @@ export default function PublicGallery() {
             const photosQuery = query(
               collection(db, "events", eventData.id, "photos"), 
               orderBy("createdAt", "desc"), 
-              limit(200)
+              limit(PAGE_SIZE)
             );
             const snap = await getDocs(photosQuery);
             const loadedPhotos = snap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
                 .filter((p: any) => !p.moderationStatus || p.moderationStatus === 'approved') as PhotoItem[];
             setPhotos(loadedPhotos);
+            
+            if (snap.docs.length > 0) {
+              setLastVisible(snap.docs[snap.docs.length - 1]);
+              setHasMore(snap.docs.length === PAGE_SIZE);
+            } else {
+              setHasMore(false);
+            }
         } catch (err) {
             handleFirestoreError(err, OperationType.LIST, `events/${eventData.id}/photos`);
         } finally {
@@ -119,6 +132,37 @@ export default function PublicGallery() {
     }
     loadPhotos();
   }, [eventData?.id, loading, eventId, navigate]);
+
+  const loadMorePhotos = async () => {
+    if (!eventData || !lastVisible || !hasMore || loadingMore) return;
+    
+    setLoadingMore(true);
+    try {
+      const photosQuery = query(
+        collection(db, "events", eventData.id, "photos"), 
+        orderBy("createdAt", "desc"),
+        startAfter(lastVisible),
+        limit(PAGE_SIZE)
+      );
+      const snap = await getDocs(photosQuery);
+      const loadedPhotos = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter((p: any) => !p.moderationStatus || p.moderationStatus === 'approved') as PhotoItem[];
+      
+      setPhotos(prev => [...prev, ...loadedPhotos]);
+      
+      if (snap.docs.length > 0) {
+        setLastVisible(snap.docs[snap.docs.length - 1]);
+        setHasMore(snap.docs.length === PAGE_SIZE);
+      } else {
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.error("Error loading more photos:", err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   // Update selected photo when URL changes
   useEffect(() => {
@@ -352,40 +396,58 @@ export default function PublicGallery() {
               <p className="text-zinc-500 max-w-sm font-medium">As fotos deste evento aparecerão aqui assim que forem registradas.</p>
             </div>
           ) : (
-            <div className="columns-2 sm:columns-3 lg:columns-4 xl:columns-5 gap-4 md:gap-6 space-y-4 md:space-y-6">
-              {photos.map((photo, i) => (
-                <motion.div
-                  key={photo.id}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: i * 0.03 }}
-                  className="relative group cursor-pointer break-inside-avoid"
-                  onClick={() => setSelectedPhoto(photo)}
-                >
-                  <div className="absolute inset-0 bg-primary/20 opacity-0 group-hover:opacity-100 transition-all duration-500 rounded-[1.5rem] md:rounded-[2.5rem] blur-xl scale-95" />
-                  <div className="relative overflow-hidden rounded-[1.5rem] md:rounded-[2.5rem] border border-white/5 bg-zinc-900 group-hover:border-primary/30 transition-all duration-500 shadow-xl shadow-black/50">
-                    <img 
-                      src={photo.dataUrl} 
-                      alt="Foto do evento"
-                      className="w-full h-auto object-cover transition-transform duration-700 group-hover:scale-110"
-                      loading="lazy"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex flex-col justify-end p-6">
-                      <div className="flex items-center justify-between">
-                        <span className="text-white text-[10px] font-black uppercase tracking-widest bg-primary px-3 py-1.5 rounded-full">memo.LAB</span>
-                        <div className="flex gap-2">
-                           <button 
-                            onClick={(e) => { e.stopPropagation(); handleDownload(photo); }}
-                            className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white hover:bg-white hover:text-black transition-all"
-                           >
-                              <Download className="w-4 h-4" />
-                           </button>
+            <div className="space-y-12">
+              <div className="columns-2 sm:columns-3 lg:columns-4 xl:columns-5 gap-4 md:gap-6 space-y-4 md:space-y-6">
+                {photos.map((photo, i) => (
+                  <motion.div
+                    key={photo.id}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: i * 0.03 }}
+                    className="relative group cursor-pointer break-inside-avoid"
+                    onClick={() => setSelectedPhoto(photo)}
+                  >
+                    <div className="absolute inset-0 bg-primary/20 opacity-0 group-hover:opacity-100 transition-all duration-500 rounded-[1.5rem] md:rounded-[2.5rem] blur-xl scale-95" />
+                    <div className="relative overflow-hidden rounded-[1.5rem] md:rounded-[2.5rem] border border-white/5 bg-zinc-900 group-hover:border-primary/30 transition-all duration-500 shadow-xl shadow-black/50">
+                      <img 
+                        src={photo.dataUrl} 
+                        alt="Foto do evento"
+                        className="w-full h-auto object-cover transition-transform duration-700 group-hover:scale-110"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex flex-col justify-end p-6">
+                        <div className="flex items-center justify-between">
+                          <span className="text-white text-[10px] font-black uppercase tracking-widest bg-primary px-3 py-1.5 rounded-full">memo.LAB</span>
+                          <div className="flex gap-2">
+                             <button 
+                              onClick={(e) => { e.stopPropagation(); handleDownload(photo); }}
+                              className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white hover:bg-white hover:text-black transition-all"
+                             >
+                                <Download className="w-4 h-4" />
+                             </button>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                </motion.div>
-              ))}
+                  </motion.div>
+                ))}
+              </div>
+              
+              {hasMore && (
+                <div className="flex justify-center pt-8">
+                  <Button
+                    onClick={loadMorePhotos}
+                    disabled={loadingMore}
+                    variant="outline"
+                    className="h-14 rounded-full px-10 border-white/10 bg-white/5 text-white font-bold tracking-widest uppercase hover:bg-white/10 transition-colors"
+                  >
+                    {loadingMore ? (
+                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                    ) : null}
+                    Carregar mais fotos
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

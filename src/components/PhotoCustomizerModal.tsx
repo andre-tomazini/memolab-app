@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Cropper from 'react-easy-crop';
 import { Button } from '@/src/components/ui/button';
-import { RotateCcw, RotateCw, ZoomIn, ZoomOut, Download, MessageCircle, MessageSquare, Printer, Check, ChevronRight, Loader2, Frame, Settings2, Share2, ArrowLeft, Send } from 'lucide-react';
+import { RotateCcw, RotateCw, ZoomIn, ZoomOut, Download, MessageCircle, MessageSquare, Printer, Check, ChevronRight, Loader2, Frame, Settings2, Share2, ArrowLeft, Send, CheckCircle } from 'lucide-react';
 import { db } from '@/src/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { Input } from '@/src/components/ui/input';
@@ -147,6 +147,7 @@ export default function PhotoCustomizerModal({ isOpen, onClose, imageUrl, overla
 
   const [showLeadCapture, setShowLeadCapture] = useState<'whatsapp' | 'sms' | null>(null);
   const [isSendingMsg, setIsSendingMsg] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && imageUrl) {
@@ -240,6 +241,8 @@ export default function PhotoCustomizerModal({ isOpen, onClose, imageUrl, overla
        const text = encodeURIComponent(finalMsg);
        window.open(`https://api.whatsapp.com/send?phone=${cleanedPhone}&text=${text}`, '_blank');
        setShowLeadCapture(null);
+       setSuccessMessage("WhatsApp Aberto!");
+       setTimeout(() => setSuccessMessage(null), 3000);
        return;
     }
 
@@ -276,6 +279,8 @@ export default function PhotoCustomizerModal({ isOpen, onClose, imageUrl, overla
         if (data.success) {
           toast.success("SMS enviado com sucesso!");
           setShowLeadCapture(null);
+          setSuccessMessage("SMS Enviado com Sucesso!");
+          setTimeout(() => setSuccessMessage(null), 3000);
         } else {
           toast.error("Falha ao enviar: " + (data.error || JSON.stringify(data)));
         }
@@ -553,7 +558,12 @@ export default function PhotoCustomizerModal({ isOpen, onClose, imageUrl, overla
                 </div>
 
                 <div className="flex flex-col gap-4">
-                  {showLeadCapture ? (
+                  {successMessage ? (
+                    <div className="min-h-[250px] flex flex-col items-center justify-center bg-green-500/10 border border-green-500/20 rounded-3xl p-8 text-center animate-in zoom-in-95 duration-300">
+                       <CheckCircle className="w-16 h-16 text-green-500 mb-4" />
+                       <h3 className="text-xl font-bold text-green-700 tracking-tight">{successMessage}</h3>
+                    </div>
+                  ) : showLeadCapture ? (
                      <LeadCapture 
                         eventId={eventData?.id} 
                         method={showLeadCapture} 

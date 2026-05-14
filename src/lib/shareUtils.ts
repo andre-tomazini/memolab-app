@@ -15,8 +15,14 @@ export const formatMessage = (template: string, leadName: string, eventName: str
   msg = msg.replace(/\[Evento[\])\}]?/gi, eventName || "Evento");
   msg = msg.replace(/\[Lead[\])\}]?/gi, leadName || "Convidado");
   
-  // Replace [link-foto] case-insensitively, optionally catching trailing brackets or partial matches
-  msg = msg.replace(/\[link-?foto[^\]\s]*[\])\}]?/gi, photoLink);
+  // Replace [link-foto] case-insensitively
+  const hasLinkTag = msg.match(/\[link-?foto[^\]\s]*[\])\}]?/gi);
+  if (hasLinkTag) {
+    msg = msg.replace(/\[link-?foto[^\]\s]*[\])\}]?/gi, photoLink);
+  } else {
+    // If user forgot to add the link placeholder, append the link
+    msg = `${msg.trim()} ${photoLink}`;
+  }
 
   return msg;
 };
@@ -59,7 +65,7 @@ export const generateShortLink = async (eventId: string, photoId: string) => {
   } catch (err) {
       console.error("Error creating short link:", err);
       // Fallback to full link
-      return `${window.location.origin}/galeria/${eventId}/${photoId}`;
+      return `${window.location.origin}/p/${eventId}/${photoId}`;
   }
 };
 
