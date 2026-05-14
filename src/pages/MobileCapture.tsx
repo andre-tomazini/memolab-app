@@ -763,6 +763,12 @@ export default function MobileCapture() {
                     onZoomChange={setZoom}
                     onRotationChange={setRotation}
                     onCropComplete={(croppedArea, croppedAreaPixels) => setCroppedAreaPixels(croppedAreaPixels)}
+                    showGrid={false}
+                    objectFit="contain"
+                    classes={{
+                      containerClassName: '!bg-transparent',
+                      mediaClassName: '!opacity-100', 
+                    }}
                     style={{
                       containerStyle: { backgroundColor: '#000' },
                       cropAreaStyle: { border: '2px solid rgba(255,255,255,0.3)', boxShadow: '0 0 0 9999em rgba(0,0,0,0.85)' }
@@ -790,8 +796,8 @@ export default function MobileCapture() {
                            <span className="text-primary">{Math.round(zoom * 100)}%</span>
                          </div>
                          <div className="flex items-center gap-4">
-                           <ZoomOut className="w-5 h-5 text-zinc-600 hover:text-white cursor-pointer" onClick={() => setZoom(Math.max(1, zoom - 0.1))} />
-                           <input type="range" className="w-full accent-primary h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer" min={1} max={3} step={0.1} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
+                           <ZoomOut className="w-5 h-5 text-zinc-600 hover:text-white cursor-pointer" onClick={() => setZoom(Math.max(0.1, zoom - 0.1))} />
+                           <input type="range" className="w-full accent-primary h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer" min={0.1} max={3} step={0.05} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
                            <ZoomIn className="w-5 h-5 text-zinc-600 hover:text-white cursor-pointer" onClick={() => setZoom(Math.min(3, zoom + 0.1))} />
                          </div>
                        </div>
